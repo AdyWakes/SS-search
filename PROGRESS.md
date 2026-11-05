@@ -11,7 +11,7 @@ Resume guide for a new session: read this, then `DECISIONS.md`.
 - [x] 6. UI: search grid, hotkey bar, settings, indexing progress
 - [x] 7. Release workflow + README
 - [x] Self-review, fixes, UI screenshots
-- [ ] MORNING.md
+- [x] MORNING.md
 
 ## Verified in the sandbox (Linux, Xvfb)
 - Real app: launched, ONNX Runtime loaded from bundled resources, 4 test images scanned + OCR'd, thumbnails via `thumb://`, typo query `upl paymnet rahul` found the chat screenshots in 4 ms, global hotkey Alt+Shift+S opened the quick bar, Ctrl+Shift+C put OCR text on the clipboard.
@@ -26,7 +26,7 @@ cargo test -p shotfind-core            # core tests, no models required
 ```
 
 ## Next
-MORNING.md, then: pin the CLIP vision hash, calibrate `search::tuning` with real CLIP, test on real Windows.
+Pin the CLIP vision hash, calibrate `search::tuning` with real CLIP, test on real Windows.
 
 ## Known issues
 - Ranking constants (`search::tuning`) are calibrated on fake embeddings only; tune with real CLIP once pinned.
