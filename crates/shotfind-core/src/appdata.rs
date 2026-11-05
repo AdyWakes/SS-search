@@ -97,6 +97,9 @@ impl AppData {
 
     pub fn rename(&self, from: &Path, to: &Path) -> Result<()> {
         let (from, to) = (self.guard(from)?, self.guard(to)?);
+        if let Some(parent) = to.parent() {
+            fs::create_dir_all(parent)?;
+        }
         fs::rename(from, to)?;
         Ok(())
     }
@@ -160,6 +163,17 @@ mod tests {
         assert!(ad.write_atomic(&dir.path().join("evil.txt"), b"x").is_err());
         assert!(!dir.path().join("evil.txt").exists());
         assert!(ad.remove_dir_all(ad.root()).is_err());
+    }
+
+    #[test]
+    fn rename_creates_destination_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let ad = AppData::open(dir.path()).unwrap();
+        let part = ad.models_dir().join(".partial/x.part");
+        ad.write_atomic(&part, b"model").unwrap();
+        let dest = ad.models_dir().join("new-model-dir/x.onnx");
+        ad.rename(&part, &dest).unwrap();
+        assert_eq!(fs::read(dest).unwrap(), b"model");
     }
 
     #[test]
