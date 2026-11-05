@@ -1,6 +1,6 @@
 # Good morning — shotfind status
 
-Branch: `claude/busy-noether-d0hfd6` (all 7 phases plus the self-review are committed and pushed; there is no PR, release or deploy).
+Branch: `claude/busy-noether-d0hfd6` (all 7 phases plus the self-review are committed and pushed; there is no PR, release or deploy). **CI is green on the latest commit** ([run 42001004425](https://github.com/AdyWakes/SS-search/actions/runs/42001004425)): lint, core tests on Linux/Windows/macOS, and the real-model job (OCR + CLIP).
 
 ## Summary
 
