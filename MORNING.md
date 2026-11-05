@@ -14,18 +14,17 @@ Branch: `claude/busy-noether-d0hfd6` (all 7 phases plus the self-review are comm
 - **Privacy:** models download once after consent, checked against pinned SHA-256s. There are no other network calls. User files are opened read-only, which is enforced by a static audit test and a behavioural one.
 - **CI:** lint + tests on Linux/Windows/macOS, plus a real-model job. Pushing a tag builds Windows .msi/.exe, macOS .dmg (arm64 + x64) and Linux .AppImage/.deb into a **draft** release.
 
-Docs: `README.md` (user-facing), `DECISIONS.md` (35 logged decisions and why), `PROGRESS.md` (resume guide), `THIRD_PARTY_NOTICES.md`, and UI screenshots in `docs/screenshots/`.
+Docs: `README.md` (user-facing), `DECISIONS.md` (37 logged decisions and why), `PROGRESS.md` (resume guide), `THIRD_PARTY_NOTICES.md`, and UI screenshots in `docs/screenshots/`.
 
-## ⚠️ The one thing to do first
+## ⚠️ Read this first: model hashes
 
-**Pin the CLIP vision model's hash.** Hugging Face was blocked from my sandbox, so I couldn't hash `vision_model_quantized.onnx`. The app refuses any download without a pinned SHA-256. Until this is done, meaning search is unavailable. Text search works fully either way.
+Hugging Face was blocked from my sandbox, so I couldn't hash the CLIP vision model myself. Instead, CI's `model-tests` job downloaded it on a clean GitHub runner and printed its SHA-256, and I pinned that value (DECISIONS #36). The same CI run independently confirmed the CLIP text hash I had found via web search. With the hash pinned, the app's own downloader installed real CLIP in CI and the meaning-search ranking test passed.
+
+To double-check the pinned hashes against upstream yourself (needs internet):
 
 ```powershell
-node scripts/pin-models.mjs
-git diff crates/shotfind-core/models.json
+node scripts/pin-models.mjs --verify
 ```
-
-Check that only the CLIP `sha256`/`size` fields changed, then commit. (The CI `model-tests` job also prints the upstream hashes in its log.) The CLIP *text* model hash came from the Hugging Face file page via web search. `pin-models.mjs --verify`, which CI runs, confirms it against the real download.
 
 ## What works (verified here)
 
@@ -34,10 +33,10 @@ Check that only the CLIP `sha256`/`size` fields changed, then commit. (The CI `m
   - search ranking: exact, typos, OCR look-alikes, numbers, prefixes, meaning, combined, filters, snippets, odd FTS input
   - the never-modify guarantee: a read-only tree stays byte/mtime/permission-identical, plus a static audit of the source
   - the tokenizer, the downloader's hash rejection, and recovery from a corrupt database
-- **Real-model tests pass:** OCR on rendered text, a 60-line scrolling capture, and the CLIP plumbing with hand-built ONNX models.
+- **Real-model tests pass in CI:** OCR on rendered text and on a 60-line scrolling capture. Real CLIP is installed by the app's downloader and ranks a chart, a sunset and an invoice correctly for matching queries. The CLIP plumbing is also tested with hand-built ONNX models.
 - **The real app ran on Linux (Xvfb).** The bundled ONNX Runtime loaded, 4 screenshots were OCR'd, and thumbnails displayed. The typo query `upl paymnet rahul` found the right screenshots in 4 ms. Alt+Shift+S opened the quick bar, and Ctrl+Shift+C put the OCR text on the clipboard. Captures: `docs/screenshots/real-app-linux-*.png`.
-- **The real downloader works:** it fetched the OCR models (PyPI wheel → verified → extracted → verified).
-- **Windows compile check:** `cargo check --target x86_64-pc-windows-gnu` passes for both crates. The first CI runs had failed on a Windows-only API mismatch and on new clippy lints; both are fixed in the last commit.
+- **The real downloader works:** it installs OCR (PyPI wheel → verified → extracted → verified) and CLIP (direct files → verified). CI caught a bug in the CLIP path, where the model folder wasn't created; that's fixed.
+- **Windows compile check:** `cargo check --target x86_64-pc-windows-gnu` passes for both crates. Early CI runs failed on a Windows-only API mismatch and on new clippy lints; both are fixed. The latest Windows test run had one possibly flaky failure: 5 indexed files instead of 4 right after *Delete index*, in a test that had passed on Windows in the previous run. That assertion now dumps every indexed row when it fails, so the next failure will show the cause.
 - **Performance:**
   - search, worst case: 84 ms on a 20k-image synthetic index
   - scan: 10k files in 0.2 s
@@ -46,7 +45,7 @@ Check that only the CLIP `sha256`/`size` fields changed, then commit. (The CI `m
 
 ## What's weak / not done
 
-1. **Meaning search is blocked until the hash is pinned** (above). The ranking constants (`search::tuning`) were calibrated on fake embeddings only. After pinning, try `cat`, `receipt`, `chart` and `whiteboard`, and adjust `SEM_FLOOR`/`SEM_MIN` if results look too loose or too strict.
+1. **Meaning-search tuning is rough.** With real CLIP, matching pairs scored only 0.233–0.257 and non-matching ones 0.18–0.237 on synthetic test images, so the margins are thin. I've set `search::tuning` from those numbers. On your real library, try `cat`, `receipt`, `chart` and `whiteboard`, and adjust `SEM_MIN`/`SEM_WINDOW` if results look too loose or too strict.
 2. **Never run on real Windows or macOS.** It compiles for Windows, and CI runs the core tests on all three OSes, but the GUI was only exercised on Linux. Things to watch on Windows:
    - tray behaviour
    - quick-bar focus and blur
@@ -78,11 +77,10 @@ cd SS-search
 git checkout claude/busy-noether-d0hfd6
 ```
 
-**3. Pin the CLIP hash** (see above) and review the diff:
+**3. (Optional) Re-verify the pinned model hashes:**
 
 ```powershell
-node scripts/pin-models.mjs
-git diff crates/shotfind-core/models.json
+node scripts/pin-models.mjs --verify
 ```
 
 **4. Install and fetch the bundled ONNX Runtime:**
@@ -110,7 +108,7 @@ npm run tauri dev
 - [ ] The footer shows "Indexing N of M". The thin orange line under the header tracks progress.
 - [ ] Press **Win+PrtScn**. The new screenshot appears under *Recent* within about 5 seconds.
 - [ ] Search for words you know are in a screenshot. Then misspell one word (e.g. `paymnet`). Then search a number like `404`.
-- [ ] Search by content: `cat`, `receipt`, `chart` (this only works after pinning).
+- [ ] Search by content: `cat`, `receipt`, `chart`.
 - [ ] Filters: *Screenshots only*, *Past 7 days*, and the folder dropdown.
 - [ ] Keyboard: arrow keys to select, **Enter** opens, **Space** previews, **Ctrl+Enter** shows in Explorer, **Ctrl+C** copies the image (paste into Paint), **Ctrl+Shift+C** copies the text (paste into Notepad).
 - [ ] Switch to another app and press **Alt+Shift+S**. The quick bar opens. Type, press **Enter** or **Esc**, and press **Tab** to open all results.

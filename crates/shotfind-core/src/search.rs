@@ -72,15 +72,18 @@ pub struct SearchResults {
     pub corrections: Vec<(String, String)>,
 }
 
-/// Ranking constants. CLIP cosine similarities for good text-image matches
-/// sit around 0.27-0.35 and unrelated pairs around 0.15-0.20.
+/// Ranking constants. Measured with the real int8 CLIP ViT-B/32 (CI log of
+/// `clip_ranks_matching_concepts`): matching text-image pairs scored
+/// 0.233-0.257 and non-matching ones 0.18-0.237, i.e. the useful range is
+/// narrow. Photos of real objects usually separate more than these synthetic
+/// images; re-calibrate on a real library.
 pub mod tuning {
-    pub const SEM_FLOOR: f32 = 0.19;
-    pub const SEM_SPAN: f32 = 0.13;
+    pub const SEM_FLOOR: f32 = 0.18;
+    pub const SEM_SPAN: f32 = 0.10;
     /// Semantic hits must be within this much of the best one...
-    pub const SEM_WINDOW: f32 = 0.07;
+    pub const SEM_WINDOW: f32 = 0.04;
     /// ...and above this absolute similarity.
-    pub const SEM_MIN: f32 = 0.21;
+    pub const SEM_MIN: f32 = 0.215;
     pub const SEM_WEIGHT: f32 = 0.8;
     pub const PHRASE_BONUS: f32 = 0.15;
     pub const NAME_WEIGHT: f32 = 0.8;

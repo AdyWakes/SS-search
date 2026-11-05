@@ -17,6 +17,13 @@ fn ocr_texts(data: &std::path::Path) -> Vec<(String, String)> {
     st.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|r| r.unwrap()).collect()
 }
 
+/// (path, state, error) of every row, for assertion messages.
+fn dump(data: &std::path::Path) -> Vec<(String, i64, Option<String>)> {
+    let db = Db::open(&AppData::open(data).unwrap().db_path()).unwrap();
+    let mut st = db.conn().prepare("SELECT path, state, error FROM files ORDER BY path").unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(|r| r.unwrap()).collect()
+}
+
 #[test]
 fn initial_index_applies_skip_rules() {
     let fx = Fixture::new();
@@ -209,7 +216,7 @@ fn removing_a_folder_drops_its_files_and_wipe_clears_everything() {
     ix.wipe().unwrap();
     // Wipe triggers a rescan: everything comes back.
     assert!(ix.wait_idle(WAIT));
-    assert_eq!(ix.status().counts.done, 4);
+    assert_eq!(ix.status().counts.done, 4, "rows after wipe: {:#?}", dump(&fx.data));
     let mut s = fx.settings();
     s.folders.clear();
     ix.update_settings(s).unwrap();
