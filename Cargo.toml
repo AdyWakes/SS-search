@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["crates/shotfind-core", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/adywakes/ss-search"
+rust-version = "1.92"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = 3
+strip = "debuginfo"
+
+# Image decoding and tensor math are painfully slow unoptimised; keep tests usable.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.test]
+opt-level = 1

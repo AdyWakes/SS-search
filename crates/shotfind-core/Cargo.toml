@@ -1,0 +1,42 @@
+[package]
+name = "shotfind-core"
+description = "Offline screenshot indexing and search engine behind the shotfind desktop app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["download"]
+# Network access lives exclusively behind this feature (model download on first run).
+download = ["dep:ureq"]
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.41", features = ["bundled"] }
+walkdir = "2"
+notify = "8"
+notify-debouncer-full = "0.7"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
+fast_image_resize = { version = "6", features = ["image"] }
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "load-dynamic"] }
+ndarray = "0.17"
+sha2 = "0.10"
+hex = "0.4"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+flate2 = "1"
+strsim = "0.11"
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+tracing = "0.1"
+thread-priority = "1"
+dirs = "6"
+ureq = { version = "3", optional = true, default-features = false, features = ["rustls", "platform-verifier", "gzip"] }
+
+[dev-dependencies]
+tempfile = "3"
+ab_glyph = "0.2"
+imageproc = { version = "0.27", default-features = false }
