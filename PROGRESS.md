@@ -7,7 +7,7 @@ Resume guide for a new session: read this, then `DECISIONS.md`.
 - [x] 2. Scanner + watcher + SQLite schema
 - [x] 3. OCR pipeline
 - [x] 4. Embeddings pipeline + model download flow
-- [ ] 5. Search + ranking + tests
+- [x] 5. Search + ranking + tests
 - [ ] 6. UI: search grid, hotkey bar, settings, indexing progress
 - [ ] 7. Release workflow + README
 - [ ] Self-review, fixes, UI screenshots, MORNING.md
@@ -21,9 +21,12 @@ cargo test -p shotfind-core            # core tests, no models required
 ```
 
 ## Next
-Phase 5 (search + ranking).
+Phase 6 (UI).
 
 ## Known issues
+- Ranking constants (`search::tuning`) are calibrated on fake embeddings only; tune with real CLIP once pinned.
+- Search latency: 20k-file synthetic index, worst query 84 ms (release build, this VM).
+- Chinese/Japanese text is indexed, but FTS `unicode61` does not segment CJK words, so CJK search only matches whole runs of characters.
 - **CLIP vision model SHA-256 not pinned** (Hugging Face blocked in the build sandbox). Meaning search stays off until `node scripts/pin-models.mjs` is run and the manifest committed.
 - OCR speed (this VM, 1 thread): ~0.35 s detection + ~0.03–0.05 s per text line for a dense 1080p screenshot (~0.9 s total). With 2 workers x 2 threads, about 0.25–0.4 s per screenshot wall time.
 - Reading order interleaves side-by-side columns (search is unaffected; "copy text" output can mix columns).

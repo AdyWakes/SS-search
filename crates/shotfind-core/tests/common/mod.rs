@@ -110,9 +110,12 @@ fn decode_payload(img: &RgbImage) -> (String, String) {
     (String::new(), "none".into())
 }
 
+/// One-hot-ish vector. The extra last dimension is used only by queries that
+/// match no concept, so they are dissimilar to every image (like real CLIP
+/// for an unrelated query).
 pub fn concept_vec(concept: &str) -> Vec<f32> {
-    let mut v = vec![0.05f32; CONCEPTS.len()];
-    let i = CONCEPTS.iter().position(|c| *c == concept).unwrap_or(0);
+    let mut v = vec![0.05f32; CONCEPTS.len() + 1];
+    let i = CONCEPTS.iter().position(|c| *c == concept).unwrap_or(CONCEPTS.len());
     v[i] = 1.0;
     v
 }
@@ -144,7 +147,8 @@ pub struct FakeEmbed(Arc<Counters>);
 impl ImageEmbedder for FakeEmbed {
     fn embed_image(&mut self, img: &RgbImage) -> Result<Vec<f32>> {
         self.0.embed_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(concept_vec(&decode_payload(img).1))
+        let c = decode_payload(img).1;
+        Ok(concept_vec(if CONCEPTS.contains(&c.as_str()) { &c } else { "none" }))
     }
 }
 
@@ -152,7 +156,7 @@ pub struct FakeText;
 impl TextEmbedder for FakeText {
     fn embed_text(&mut self, text: &str) -> Result<Vec<f32>> {
         let t = text.to_lowercase();
-        let c = CONCEPTS.iter().skip(1).find(|c| t.contains(*c)).copied().unwrap_or("none");
+        let c = CONCEPTS.iter().skip(1).find(|c| t.contains(*c)).copied().unwrap_or("<unknown query>");
         Ok(concept_vec(c))
     }
 }
