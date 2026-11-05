@@ -4,7 +4,7 @@ Resume guide for a new session: read this, then `DECISIONS.md`.
 
 ## Phases
 - [x] 1. Scaffold + CI
-- [ ] 2. Scanner + watcher + SQLite schema
+- [x] 2. Scanner + watcher + SQLite schema
 - [ ] 3. OCR pipeline
 - [ ] 4. Embeddings pipeline + model download flow
 - [ ] 5. Search + ranking + tests
@@ -21,7 +21,7 @@ cargo test -p shotfind-core            # core tests, no models required
 ```
 
 ## Next
-Phase 2.
+Phase 3 (OCR).
 
 ## Known issues
 - (none yet)

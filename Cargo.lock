@@ -1992,6 +1992,7 @@ version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7b27bc0867dc40df08deb53d6e96342db6e0702e7ae33ed09a4eba33e594b05"
 dependencies = [
+ "ab_glyph",
  "approx",
  "getrandom 0.4.3",
  "image",
@@ -4752,16 +4753,16 @@ dependencies = [
 
 [[package]]
 name = "thread-priority"
-version = "1.2.0"
+version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfe075d7053dae61ac5413a34ea7d4913b6e6207844fd726bdd858b37ff72bf5"
+checksum = "8d2e834949be5111506bb252643498af1514f600d9e1dceedaa42afae155b67f"
 dependencies = [
  "bitflags 2.13.2",
  "cfg-if",
  "libc",
  "log",
  "rustversion",
- "winapi",
+ "windows",
 ]
 
 [[package]]

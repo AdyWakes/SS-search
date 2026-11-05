@@ -1,7 +1,19 @@
 //! shotfind-core: offline indexing + search for screenshots and images.
 //!
-//! The crate never writes to, moves, or deletes user images. All writes go to
-//! the app data directory (see [`appdata`]).
+//! The crate never writes to, moves, or deletes user images. User files are
+//! opened read-only via [`userfs`]; every write goes through [`appdata::AppData`],
+//! which refuses paths outside the app data directory.
+
+pub mod appdata;
+pub mod config;
+pub mod db;
+pub mod imgutil;
+pub mod indexer;
+pub mod pipeline;
+pub mod scanner;
+pub mod userfs;
+pub mod vectors;
+pub mod watcher;
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
