@@ -143,4 +143,4 @@ npm run tauri build
 
 ## To ship a preview release later
 
-Pin the hash, commit, then `git tag v0.1.0 && git push origin v0.1.0`. The release workflow refuses to build if any model hash is unpinned, and it produces a **draft** release you can test before publishing. I didn't create any tags or releases.
+When you are ready: `git tag v0.1.0 && git push origin v0.1.0`. The release workflow refuses to build if any model hash is unpinned, and it produces a **draft** release you can test before publishing. I didn't create any tags or releases.
