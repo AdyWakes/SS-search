@@ -352,14 +352,18 @@ pub fn sort_reading_order(lines: &mut Vec<TextLine>) {
     }
 }
 
-/// Same-row boxes are joined with spaces; rows with newlines.
+/// Same-row boxes that are close together are joined with spaces; rows, and
+/// boxes far apart on one row (side-by-side columns), with newlines.
 pub fn join_lines(lines: &[TextLine]) -> String {
     let mut out = String::new();
     let mut prev: Option<&BoxF> = None;
     for l in lines {
         if let Some(p) = prev {
             let cy = (l.bbox.y0 + l.bbox.y1) / 2.0;
-            out.push(if cy > p.y0 && cy < p.y1 { ' ' } else { '\n' });
+            let same_row = cy > p.y0 && cy < p.y1;
+            let gap = l.bbox.x0 - p.x1;
+            let close = gap < 2.5 * (p.y1 - p.y0).max(l.bbox.y1 - l.bbox.y0);
+            out.push(if same_row && close { ' ' } else { '\n' });
         }
         out.push_str(&l.text);
         prev = Some(&l.bbox);
@@ -399,8 +403,9 @@ mod tests {
             confidence: 1.0,
             bbox: BoxF { x0, y0, x1: x0 + 50.0, y1: y0 + 20.0, score: 1.0 },
         };
-        let mut v = vec![mk("world", 100.0, 12.0), mk("second", 0.0, 50.0), mk("hello", 0.0, 10.0)];
+        let mut v =
+            vec![mk("world", 60.0, 12.0), mk("second", 0.0, 50.0), mk("hello", 0.0, 10.0), mk("far", 400.0, 11.0)];
         sort_reading_order(&mut v);
-        assert_eq!(join_lines(&v), "hello world\nsecond");
+        assert_eq!(join_lines(&v), "hello world\nfar\nsecond", "far-apart boxes on one row are separate lines");
     }
 }
