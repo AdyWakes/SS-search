@@ -26,12 +26,12 @@ cargo test -p shotfind-core            # core tests, no models required
 ```
 
 ## Next
-Pin the CLIP vision hash, calibrate `search::tuning` with real CLIP, test on real Windows.
+Calibrate `search::tuning` with real CLIP, test on real Windows.
 
 ## Known issues
 - Ranking constants (`search::tuning`) are calibrated on fake embeddings only; tune with real CLIP once pinned.
 - Search latency: 20k-file synthetic index, worst query 84 ms (release build, this VM).
 - Chinese/Japanese text is indexed, but FTS `unicode61` does not segment CJK words, so CJK search only matches whole runs of characters.
-- **CLIP vision model SHA-256 not pinned** (Hugging Face blocked in the build sandbox). Meaning search stays off until `node scripts/pin-models.mjs` is run and the manifest committed.
+- CLIP vision hash was pinned from a CI download (DECISIONS #36); real CLIP has only been exercised in CI, not interactively.
 - Indexing speed (this 4-vCPU VM, real OCR, dense screenshots): 98 files/min Balanced, 132 files/min Fast. 1,000 dense screenshots = 7–10 min here; ~3–5 min expected on an 8-thread laptop.
 - Reading order interleaves side-by-side columns (search is unaffected; "copy text" output can mix columns).

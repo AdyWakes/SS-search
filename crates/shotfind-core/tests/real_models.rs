@@ -141,6 +141,10 @@ fn clip_ranks_matching_concepts() {
         [("a bar chart", "chart"), ("a sunset over the sea", "sunset"), ("a printed invoice document", "document")]
     {
         let q = txt.embed_text(query).unwrap();
+        // Printed for calibrating search::tuning (SEM_FLOOR / SEM_MIN).
+        for (n, v) in &vecs {
+            eprintln!("cosine {query:?} vs {n}: {:.3}", v.iter().zip(&q).map(|(a, b)| a * b).sum::<f32>());
+        }
         let best = vecs
             .iter()
             .map(|(n, v)| (*n, v.iter().zip(&q).map(|(a, b)| a * b).sum::<f32>()))
