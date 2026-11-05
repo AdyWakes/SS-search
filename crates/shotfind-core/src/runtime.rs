@@ -116,8 +116,9 @@ impl ort::environment::ThreadManager for BackgroundThreads {
 pub fn lower_thread_priority() {
     #[cfg(windows)]
     {
-        use thread_priority::windows::{set_current_thread_priority as set_win, WinAPIThreadPriority};
-        if set_win(WinAPIThreadPriority::BackgroundModeBegin.into()).is_ok() {
+        use thread_priority::{ThreadPriority, WinAPIThreadPriority};
+        let background = ThreadPriority::Os(WinAPIThreadPriority::BackgroundModeBegin.into());
+        if thread_priority::set_current_thread_priority(background).is_ok() {
             return;
         }
     }
