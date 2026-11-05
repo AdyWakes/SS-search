@@ -1,6 +1,7 @@
 //! In-memory brute-force vector index (cosine similarity on unit vectors).
-//! 100k images x 512 dims is ~200 MB of f32 and ~20 ms per query on one core,
-//! which is well inside the latency budget, so no ANN structure is needed.
+//! Vectors are kept as int8 with a per-vector scale: 100k images x 512 dims is
+//! ~51 MB (vs ~205 MB as f32) and a query is ~20 ms on one core, so no ANN
+//! structure is needed. Full-precision vectors stay in SQLite.
 
 use crate::db::{bytes_to_f32s, Db};
 use anyhow::Result;
@@ -11,8 +12,18 @@ pub struct VectorIndex {
     dim: usize,
     model: String,
     ids: Vec<i64>,
-    data: Vec<f32>,
+    data: Vec<i8>,
+    scales: Vec<f32>,
     pos: HashMap<i64, usize>,
+}
+
+fn quantize(v: &[f32]) -> (Vec<i8>, f32) {
+    let max = v.iter().fold(0f32, |m, x| m.max(x.abs()));
+    if max == 0.0 {
+        return (vec![0; v.len()], 0.0);
+    }
+    let s = 127.0 / max;
+    (v.iter().map(|x| (x * s).round().clamp(-127.0, 127.0) as i8).collect(), max / 127.0)
 }
 
 pub fn normalize(v: &mut [f32]) {
@@ -59,12 +70,15 @@ impl VectorIndex {
             return;
         }
         normalize(&mut v);
+        let (q, scale) = quantize(&v);
         if let Some(&p) = self.pos.get(&id) {
-            self.data[p * self.dim..(p + 1) * self.dim].copy_from_slice(&v);
+            self.data[p * self.dim..(p + 1) * self.dim].copy_from_slice(&q);
+            self.scales[p] = scale;
         } else {
             self.pos.insert(id, self.ids.len());
             self.ids.push(id);
-            self.data.extend_from_slice(&v);
+            self.data.extend_from_slice(&q);
+            self.scales.push(scale);
         }
     }
 
@@ -76,9 +90,11 @@ impl VectorIndex {
             self.ids[p] = moved;
             let (d, dim) = (&mut self.data, self.dim);
             d.copy_within(last * dim..(last + 1) * dim, p * dim);
+            self.scales[p] = self.scales[last];
             self.pos.insert(moved, p);
         }
         self.ids.pop();
+        self.scales.pop();
         self.data.truncate(last * self.dim);
     }
 
@@ -94,7 +110,7 @@ impl VectorIndex {
             .filter(|(_, id)| allow.is_none_or(|a| a.contains(id)))
             .map(|(i, &id)| {
                 let row = &self.data[i * self.dim..(i + 1) * self.dim];
-                (id, dot(row, q))
+                (id, dot(row, q) * self.scales[i])
             })
             .collect();
         let k = k.min(scored.len());
@@ -111,7 +127,7 @@ impl VectorIndex {
 }
 
 #[inline]
-fn dot(a: &[f32], b: &[f32]) -> f32 {
+fn dot(a: &[i8], b: &[f32]) -> f32 {
     // Chunked so the compiler auto-vectorises.
     let mut acc = [0f32; 8];
     let ca = a.chunks_exact(8);
@@ -119,12 +135,12 @@ fn dot(a: &[f32], b: &[f32]) -> f32 {
     let (ra, rb) = (ca.remainder(), cb.remainder());
     for (x, y) in ca.zip(cb) {
         for i in 0..8 {
-            acc[i] += x[i] * y[i];
+            acc[i] += x[i] as f32 * y[i];
         }
     }
     let mut s: f32 = acc.iter().sum();
     for (x, y) in ra.iter().zip(rb) {
-        s += x * y;
+        s += *x as f32 * y;
     }
     s
 }
@@ -132,6 +148,28 @@ fn dot(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quantized_scores_are_close_to_exact() {
+        let mut idx = VectorIndex::default();
+        let mut rng = 1u64;
+        let mut rand = || {
+            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((rng >> 33) % 2000) as f32 / 1000.0 - 1.0
+        };
+        let vs: Vec<Vec<f32>> = (0..50).map(|_| (0..512).map(|_| rand()).collect()).collect();
+        for (i, v) in vs.iter().enumerate() {
+            idx.upsert(i as i64, v.clone());
+        }
+        let mut q: Vec<f32> = (0..512).map(|_| rand()).collect();
+        normalize(&mut q);
+        for (id, score) in idx.search(&q, 50, None) {
+            let mut v = vs[id as usize].clone();
+            normalize(&mut v);
+            let exact: f32 = v.iter().zip(&q).map(|(a, b)| a * b).sum();
+            assert!((exact - score).abs() < 0.01, "{exact} vs {score}");
+        }
+    }
 
     #[test]
     fn upsert_remove_search() {

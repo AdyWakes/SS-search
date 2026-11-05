@@ -71,6 +71,55 @@ pub fn session(model: &Path, threads: usize) -> Result<Session> {
         .with_intra_threads(threads.max(1))
         .map_err(|e| anyhow!("{e}"))?
         .with_inter_threads(1)
+        .map_err(|e| anyhow!("{e}"))?
+        // OCR inputs change shape every call; ORT's per-shape memory pattern
+        // cache would otherwise grow by hundreds of MB.
+        .with_memory_pattern(false)
+        .map_err(|e| anyhow!("{e}"))?
+        // Without the arena, memory goes back to the OS after each image instead
+        // of staying at the high-water mark of the largest screenshot seen.
+        .with_execution_providers([ort::ep::CPU::default()
+            .with_arena_allocator(std::env::var_os("SHOTFIND_ORT_ARENA").is_some())
+            .build()])
         .map_err(|e| anyhow!("{e}"))?;
+    if threads > 1 {
+        // ORT's own pool threads run at background priority like ours.
+        b = b.with_thread_manager(BackgroundThreads).map_err(|e| anyhow!("{e}"))?;
+    }
     b.commit_from_file(model).with_context(|| format!("loading model {}", model.display()))
+}
+
+/// Spawns ONNX Runtime's intra-op pool threads at background priority (on
+/// Windows, threads start at normal priority regardless of their creator).
+struct BackgroundThreads;
+
+impl ort::environment::ThreadManager for BackgroundThreads {
+    type Thread = std::thread::JoinHandle<()>;
+
+    fn create(&self, work: impl FnOnce() + Send + 'static) -> ort::Result<Self::Thread> {
+        std::thread::Builder::new()
+            .name("shotfind-ort".into())
+            .spawn(move || {
+                lower_thread_priority();
+                work()
+            })
+            .map_err(|e| ort::Error::new(e.to_string()))
+    }
+
+    fn join(thread: Self::Thread) -> ort::Result<()> {
+        thread.join().map_err(|_| ort::Error::new("ORT worker thread panicked"))
+    }
+}
+
+/// Lowest scheduling priority for the current thread. On Windows this is
+/// background mode, which also lowers I/O and memory priority.
+pub fn lower_thread_priority() {
+    #[cfg(windows)]
+    {
+        use thread_priority::windows::{set_current_thread_priority as set_win, WinAPIThreadPriority};
+        if set_win(WinAPIThreadPriority::BackgroundModeBegin.into()).is_ok() {
+            return;
+        }
+    }
+    let _ = thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Min);
 }

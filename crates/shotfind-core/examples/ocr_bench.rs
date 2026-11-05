@@ -21,13 +21,14 @@ fn main() -> anyhow::Result<()> {
         opts.rec_height = v;
     }
     let mut ocr = PaddleOcr::load(&dir.join("det.onnx"), &dir.join("rec.onnx"), None, threads)?.with_options(opts);
-    println!("load: {:?}", t.elapsed());
+    println!("load: {:?} {}", t.elapsed(), peak_rss());
     for p in args {
         let bytes = std::fs::read(&p)?;
         let img = imgutil::decode_rgb(&bytes, 100_000_000)?;
         let t = Instant::now();
         let boxes = ocr.detect(&img)?;
         let td = t.elapsed();
+        println!("after det: {}", peak_rss());
         let t = Instant::now();
         let lines = ocr.read_lines(&img)?;
         let total = t.elapsed();
@@ -36,5 +37,14 @@ fn main() -> anyhow::Result<()> {
             println!("  [{:.2}] {}", l.confidence, l.text);
         }
     }
+    println!("peak memory: {}", peak_rss());
     Ok(())
+}
+
+#[allow(dead_code)]
+fn peak_rss() -> String {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| s.lines().find(|l| l.starts_with("VmHWM")).map(|l| l.to_string()))
+        .unwrap_or_default()
 }

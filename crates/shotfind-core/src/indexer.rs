@@ -113,9 +113,22 @@ impl Indexer {
         let s2 = shared.clone();
         let coordinator = std::thread::Builder::new().name("shotfind-indexer".into()).spawn(move || {
             lower_thread_priority();
-            if let Err(e) = coordinator_loop(&s2, cmd_rx) {
-                tracing::error!("indexer stopped: {e:#}");
-                s2.set_error(format!("{e:#}"));
+            // Supervisor: a transient failure (disk full, database busy)
+            // restarts the loop after a pause instead of ending indexing.
+            let mut failures = 0u32;
+            loop {
+                match coordinator_loop(&s2, &cmd_rx) {
+                    Ok(()) => break,
+                    Err(e) => {
+                        failures += 1;
+                        tracing::error!("indexer error (restart #{failures}): {e:#}");
+                        s2.set_error(format!("{e:#}"));
+                        let wait = Duration::from_secs((5 * failures as u64).min(120));
+                        if let Ok(Cmd::Stop) = cmd_rx.recv_timeout(wait) {
+                            break;
+                        }
+                    }
+                }
             }
             s2.set_phase(Phase::Stopped);
         })?;
@@ -331,18 +344,7 @@ impl Shared {
     }
 }
 
-fn lower_thread_priority() {
-    use thread_priority::{set_current_thread_priority, ThreadPriority};
-    #[cfg(windows)]
-    {
-        // Background mode also lowers I/O and memory priority on Windows.
-        use thread_priority::windows::{set_current_thread_priority as set_win, WinAPIThreadPriority};
-        if set_win(WinAPIThreadPriority::BackgroundModeBegin.into()).is_ok() {
-            return;
-        }
-    }
-    let _ = set_current_thread_priority(ThreadPriority::Min);
-}
+use crate::runtime::lower_thread_priority;
 
 struct Pool {
     job_tx: Sender<Job>,
@@ -361,7 +363,19 @@ impl Pool {
                 lower_thread_priority();
                 let mut engines = WorkerEngines::default();
                 let mut gen = 0u64;
-                while let Ok(job) = job_rx.recv() {
+                loop {
+                    let job = match job_rx.recv_timeout(Duration::from_secs(30)) {
+                        Ok(j) => j,
+                        Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                            // Idle: free the models (hundreds of MB) until work arrives.
+                            if gen != 0 {
+                                engines = WorkerEngines::default();
+                                gen = 0;
+                            }
+                            continue;
+                        }
+                        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+                    };
                     if shared.paused.load(Ordering::SeqCst) {
                         let _ = result_tx.send((job, None));
                         continue;
@@ -410,13 +424,14 @@ fn build_engines(shared: &Shared) -> WorkerEngines {
     WorkerEngines { ocr, embed }
 }
 
-fn coordinator_loop(shared: &Arc<Shared>, cmd_rx: Receiver<Cmd>) -> Result<()> {
+fn coordinator_loop(shared: &Arc<Shared>, cmd_rx: &Receiver<Cmd>) -> Result<()> {
     let workers = shared.settings.read().effective_workers();
     let pool = Pool::new(shared, workers)?;
     let (watch_tx, watch_rx) = unbounded::<WatchEvent>();
     let mut watcher: Option<FolderWatcher> = None;
     let mut need_scan = true;
     let mut recent: VecDeque<Instant> = VecDeque::new();
+    let mut last_counts = Instant::now();
     let mut stop = false;
 
     let handle_cmd = |c: Cmd, need_scan: &mut bool, stop: &mut bool| match c {
@@ -474,9 +489,19 @@ fn coordinator_loop(shared: &Arc<Shared>, cmd_rx: Receiver<Cmd>) -> Result<()> {
             let stats = full_scan(shared, &folders)?;
             shared.status.lock().last_scan = Some(stats);
             shared.refresh_counts();
-            let w = watcher::watch(&folders, watch_tx.clone())?;
-            shared.status.lock().watching = w.watching.len();
-            watcher = Some(w);
+            // Without a watcher (e.g. inotify limits reached) indexing still works;
+            // new files are picked up by the next rescan.
+            drop(watcher.take());
+            match watcher::watch(&folders, watch_tx.clone()) {
+                Ok(w) => {
+                    shared.status.lock().watching = w.watching.len();
+                    watcher = Some(w);
+                }
+                Err(e) => {
+                    tracing::warn!("file watcher unavailable: {e}");
+                    shared.status.lock().watching = 0;
+                }
+            }
             shared.notify(true);
             continue;
         }
@@ -555,7 +580,11 @@ fn coordinator_loop(shared: &Arc<Shared>, cmd_rx: Receiver<Cmd>) -> Result<()> {
                     shared.status.lock().per_minute = (recent.len() - 1) as f64 * 60.0 / span;
                 }
             }
-            shared.refresh_counts();
+            // COUNT(*) GROUP BY over a 100k-row table is not free: at most ~3/s.
+            if last_counts.elapsed() > Duration::from_millis(300) {
+                shared.refresh_counts();
+                last_counts = Instant::now();
+            }
             shared.notify(false);
         }
     }

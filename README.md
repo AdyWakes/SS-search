@@ -81,7 +81,9 @@ Meaning search is optional. Without CLIP you still get text and file-name search
 ### Performance (measured on the 4-vCPU build VM)
 
 - **Search:** worst query 84 ms on a synthetic 20,000-image index (`cargo test --release -p shotfind-core --test perf -- --ignored --nocapture`). The real app answered in 4 ms on a small library.
-- **OCR:** about 0.35 s for detection plus 30–50 ms per text line, per CPU thread pair, for a dense 1080p screenshot. With the default *Balanced* speed (half your CPU threads, at background priority) that comes to roughly 3–5 minutes per 1,000 screenshots on a typical 8-thread laptop. *Fast* uses all but one thread.
+- **Indexing with real OCR** (dense 1080p–4K chat and terminal screenshots, `cargo run --release --example index_bench`): 98 files/min with *Balanced* and 132 files/min with *Fast* on the 4-vCPU build VM. So 1,000 screenshots take about 7–10 minutes there. A typical 8-thread laptop runs twice the workers, so expect about 3–5 minutes. Images without much text are much faster. CLIP adds roughly 10–15%.
+- **Scanning:** 10,000 files are found in 0.2 s, and an unchanged rescan takes 0.2 s. The non-OCR pipeline (decode, thumbnail, database) handles about 600 files/s (`tests/large_folder.rs`).
+- **Memory:** an OCR worker peaks at about 280 MB while processing a large screenshot, and the memory is released when it goes idle (models unload after 30 s without work). CLIP is shared by all workers. The in-memory vector index stores int8 values, about 51 MB per 100k images.
 
 ## Build from source
 

@@ -27,7 +27,7 @@ fn file_of(st: &AppState, id: i64) -> CmdResult<FileRow> {
 #[tauri::command]
 pub async fn search(st: State<'_, AppState>, query: Query) -> CmdResult<SearchResults> {
     let engine = st.engine.clone();
-    tauri::async_runtime::spawn_blocking(move || engine.search(&query)).await.map_err(err)?.map_err(err)
+    blocking(move || engine.search(&query)).await
 }
 
 #[tauri::command]
@@ -51,8 +51,14 @@ pub fn get_settings(st: State<'_, AppState>) -> SettingsView {
     }
 }
 
+/// Runs blocking engine work off the main thread (Tauri runs sync commands on
+/// it, and the indexer's database may be busy with a long folder scan).
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> anyhow::Result<T> + Send + 'static) -> CmdResult<T> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(err)?.map_err(err)
+}
+
 #[tauri::command]
-pub fn save_settings(app: AppHandle, st: State<'_, AppState>, settings: Settings) -> CmdResult<()> {
+pub async fn save_settings(app: AppHandle, st: State<'_, AppState>, settings: Settings) -> CmdResult<()> {
     let old = st.engine.settings();
     // Folders must exist; store them canonicalised so prefixes compare reliably.
     let mut s = settings;
@@ -62,7 +68,8 @@ pub fn save_settings(app: AppHandle, st: State<'_, AppState>, settings: Settings
         }
     }
     s.folders.dedup_by(|a, b| a.path == b.path);
-    st.engine.update_settings(s.clone()).map_err(err)?;
+    let (engine, s2) = (st.engine.clone(), s.clone());
+    blocking(move || engine.update_settings(s2)).await?;
     if old.hotkey != s.hotkey {
         crate::hotkey::register(&app, &s.hotkey).map_err(|e| format!("Couldn't use that shortcut: {e}"))?;
     }
@@ -70,11 +77,12 @@ pub fn save_settings(app: AppHandle, st: State<'_, AppState>, settings: Settings
 }
 
 #[tauri::command]
-pub fn set_hotkey(app: AppHandle, st: State<'_, AppState>, hotkey: String) -> CmdResult<()> {
+pub async fn set_hotkey(app: AppHandle, st: State<'_, AppState>, hotkey: String) -> CmdResult<()> {
     crate::hotkey::register(&app, &hotkey).map_err(|e| format!("Couldn't use that shortcut: {e}"))?;
     let mut s = st.engine.settings();
     s.hotkey = hotkey;
-    st.engine.update_settings(s).map_err(err)
+    let engine = st.engine.clone();
+    blocking(move || engine.update_settings(s)).await
 }
 
 #[tauri::command]
@@ -93,14 +101,15 @@ pub fn rescan(st: State<'_, AppState>) {
 }
 
 #[tauri::command]
-pub fn retry_failed(st: State<'_, AppState>) -> CmdResult<usize> {
-    st.engine.indexer().retry_failed().map_err(err)
+pub async fn retry_failed(st: State<'_, AppState>) -> CmdResult<usize> {
+    let engine = st.engine.clone();
+    blocking(move || engine.indexer().retry_failed()).await
 }
 
 #[tauri::command]
 pub async fn wipe_index(st: State<'_, AppState>) -> CmdResult<()> {
     let engine = st.engine.clone();
-    tauri::async_runtime::spawn_blocking(move || engine.indexer().wipe()).await.map_err(err)?.map_err(err)
+    blocking(move || engine.indexer().wipe()).await
 }
 
 #[derive(Serialize)]
@@ -123,13 +132,17 @@ pub fn models_status(st: State<'_, AppState>) -> ModelsView {
 
 /// Starts the one-time download (after the user agreed on the consent screen).
 #[tauri::command]
-pub fn download_models(app: AppHandle, st: State<'_, AppState>, ids: Vec<ModelId>) -> CmdResult<()> {
+pub async fn download_models(app: AppHandle, st: State<'_, AppState>, ids: Vec<ModelId>) -> CmdResult<()> {
     if st.downloading.swap(true, Ordering::SeqCst) {
         return Err("A download is already running.".into());
     }
     let mut s = st.engine.settings();
     s.models_consented = true;
-    st.engine.update_settings(s).map_err(err)?;
+    let engine = st.engine.clone();
+    if let Err(e) = blocking(move || engine.update_settings(s)).await {
+        st.downloading.store(false, Ordering::SeqCst);
+        return Err(e);
+    }
     st.download_cancel.store(false, Ordering::SeqCst);
     let (engine, cancel, flag) = (st.engine.clone(), st.download_cancel.clone(), st.downloading.clone());
     std::thread::spawn(move || {
@@ -151,24 +164,29 @@ pub fn cancel_download(st: State<'_, AppState>) {
 
 /// Offline install from a folder the user picked.
 #[tauri::command]
-pub fn import_models(st: State<'_, AppState>, dir: String) -> CmdResult<Vec<ModelId>> {
-    let got = models::import_from_dir(st.engine.appdata(), Path::new(&dir)).map_err(err)?;
-    if got.is_empty() {
-        return Err("No matching model files found in that folder (names and SHA-256 must match).".into());
-    }
-    let mut s = st.engine.settings();
-    s.models_consented = true;
-    st.engine.update_settings(s).map_err(err)?;
-    st.engine.reload_models().map_err(err)?;
-    Ok(got)
+pub async fn import_models(st: State<'_, AppState>, dir: String) -> CmdResult<Vec<ModelId>> {
+    let engine = st.engine.clone();
+    blocking(move || {
+        let got = models::import_from_dir(engine.appdata(), Path::new(&dir))?;
+        if got.is_empty() {
+            anyhow::bail!("No matching model files found in that folder (names and SHA-256 must match).");
+        }
+        let mut s = engine.settings();
+        s.models_consented = true;
+        engine.update_settings(s)?;
+        engine.reload_models()?;
+        Ok(got)
+    })
+    .await
 }
 
 /// "Not now": index file names only; the consent screen is not shown again.
 #[tauri::command]
-pub fn skip_models(st: State<'_, AppState>) -> CmdResult<()> {
+pub async fn skip_models(st: State<'_, AppState>) -> CmdResult<()> {
     let mut s = st.engine.settings();
     s.models_consented = true;
-    st.engine.update_settings(s).map_err(err)
+    let engine = st.engine.clone();
+    blocking(move || engine.update_settings(s)).await
 }
 
 #[tauri::command]
@@ -224,8 +242,9 @@ pub fn file_details(st: State<'_, AppState>, id: i64) -> CmdResult<FileDetails> 
 }
 
 #[tauri::command]
-pub fn folders_in_index(st: State<'_, AppState>) -> CmdResult<Vec<(String, u64)>> {
-    st.engine.searcher().folders().map_err(err)
+pub async fn folders_in_index(st: State<'_, AppState>) -> CmdResult<Vec<(String, u64)>> {
+    let engine = st.engine.clone();
+    blocking(move || engine.searcher().folders()).await
 }
 
 #[tauri::command]

@@ -4,13 +4,27 @@ use crate::models::{self, ModelId};
 use crate::ocr::{PaddleOcr, OCR_VERSION};
 use crate::pipeline::{EngineProvider, ImageEmbedder, OcrEngine, TextEmbedder};
 use anyhow::Result;
+use image::RgbImage;
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Weak};
 
 pub struct OnnxProvider {
     models_dir: PathBuf,
     threads: usize,
     ocr: bool,
     clip: bool,
+    /// One CLIP vision session shared by all workers (it is ~10% of the work
+    /// per file, so sharing costs little and saves a model copy per worker).
+    /// Weak: freed when every worker has released it.
+    shared_clip: Mutex<Weak<Mutex<crate::embed::ClipImage>>>,
+}
+
+struct SharedClip(Arc<Mutex<crate::embed::ClipImage>>);
+impl ImageEmbedder for SharedClip {
+    fn embed_image(&mut self, img: &RgbImage) -> Result<Vec<f32>> {
+        self.0.lock().embed_image(img)
+    }
 }
 
 impl OnnxProvider {
@@ -22,6 +36,7 @@ impl OnnxProvider {
             threads: threads_per_worker.max(1),
             ocr: ready && models::is_installed(models_dir, ModelId::Ocr),
             clip: ready && models::is_installed(models_dir, ModelId::Clip),
+            shared_clip: Mutex::new(Weak::new()),
         }
     }
 
@@ -79,7 +94,19 @@ impl EngineProvider for OnnxProvider {
         if !self.clip {
             return Ok(None);
         }
-        Ok(Some(Box::new(crate::embed::ClipImage::load(&self.file(ModelId::Clip, "vision.onnx"), self.threads)?)))
+        let mut slot = self.shared_clip.lock();
+        let clip = match slot.upgrade() {
+            Some(c) => c,
+            None => {
+                let c = Arc::new(Mutex::new(crate::embed::ClipImage::load(
+                    &self.file(ModelId::Clip, "vision.onnx"),
+                    self.threads,
+                )?));
+                *slot = Arc::downgrade(&c);
+                c
+            }
+        };
+        Ok(Some(Box::new(SharedClip(clip))))
     }
 
     fn new_text_embedder(&self) -> Result<Option<Box<dyn TextEmbedder>>> {

@@ -73,7 +73,8 @@ fn numbers_must_match_exactly() {
 fn prefix_matches_while_typing() {
     let fx = library();
     let e = engine(&fx);
-    assert_eq!(names(&e, "quarter")[0], "meeting.jpg");
+    let r = names(&e, "quarter");
+    assert_eq!(r.first().map(|s| s.as_str()), Some("meeting.jpg"), "{r:?} {:?}", e.status());
     assert_eq!(names(&e, "unauth")[0], "Screenshot 2023-01-02 error.png");
 }
 

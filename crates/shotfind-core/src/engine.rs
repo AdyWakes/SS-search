@@ -23,6 +23,7 @@ impl Engine {
     /// Opens the real engine. `ort_candidates`: where the bundled ONNX Runtime may be.
     pub fn open(appdata_dir: PathBuf, ort_candidates: &[PathBuf]) -> Result<Engine> {
         let appdata = AppData::open(appdata_dir)?;
+        recover_unreadable_index(&appdata);
         let settings = Settings::load(&appdata);
         let runtime_error = crate::runtime::init(ort_candidates).err().map(|e| format!("{e:#}"));
         if let Some(e) = &runtime_error {
@@ -111,5 +112,64 @@ impl Engine {
 
     pub fn shutdown(&mut self) {
         self.indexer.shutdown();
+    }
+}
+
+/// If the index database can't be opened (corrupted by a disk error, or
+/// written by a newer version), move it aside so the app still starts and
+/// rebuilds the index. The index only holds derived data, so nothing is lost.
+fn recover_unreadable_index(appdata: &AppData) {
+    let path = appdata.db_path();
+    if !path.exists() {
+        return;
+    }
+    let problem = match crate::db::Db::open(&path) {
+        Ok(db) => match db.meta_get("schema_version") {
+            Ok(Some(v)) if v.parse::<i64>().unwrap_or(0) > crate::db::SCHEMA_VERSION => {
+                Some(format!("index was created by a newer shotfind (schema {v})"))
+            }
+            Ok(_) => db
+                .conn()
+                .query_row("SELECT COUNT(*) FROM files", [], |r| r.get::<_, i64>(0))
+                .err()
+                .map(|e| e.to_string()),
+            Err(e) => Some(e.to_string()),
+        },
+        Err(e) => Some(format!("{e:#}")),
+    };
+    let Some(problem) = problem else { return };
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let aside = appdata.root().join(format!("index.unreadable-{stamp}.sqlite3"));
+    tracing::error!("index database unreadable ({problem}); moving it to {} and rebuilding", aside.display());
+    if let Err(e) = appdata.rename(&path, &aside) {
+        tracing::error!("could not move the broken index aside: {e}");
+        return;
+    }
+    for ext in ["sqlite3-wal", "sqlite3-shm"] {
+        let _ = appdata.remove_file(&path.with_extension(ext));
+    }
+    let _ = appdata.remove_dir_all(&appdata.thumbs_dir());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn garbage_database_is_moved_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let ad = AppData::open(dir.path()).unwrap();
+        ad.write_atomic(&ad.db_path(), &vec![0xAB; 8192]).unwrap();
+        recover_unreadable_index(&ad);
+        assert!(!ad.db_path().exists());
+        let moved = std::fs::read_dir(ad.root())
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with("index.unreadable-"));
+        assert!(moved);
+        // A healthy database is left alone.
+        drop(crate::db::Db::open(&ad.db_path()).unwrap());
+        recover_unreadable_index(&ad);
+        assert!(ad.db_path().exists());
     }
 }
