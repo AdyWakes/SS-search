@@ -111,7 +111,7 @@ function Main() {
     if (handleResultKeys(e, hits[sel]?.id ?? null, act)) e.preventDefault();
   };
 
-  const resultInfo = results && text.trim() ? `${formatCount(hits.length)} results · ${Math.round(results.took_ms)} ms` : null;
+  const resultInfo = results && text.trim() ? `${formatCount(hits.length)} ${hits.length === 1 ? "result" : "results"} · ${Math.round(results.took_ms)} ms` : null;
   const noModels = status && !status.ocr_available;
 
   return (

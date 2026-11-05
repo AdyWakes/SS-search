@@ -10,3 +10,4 @@ src-tauri/resources/onnxruntime/*
 /playwright-report/
 .vite/
 *.tsbuildinfo
+.models-test/

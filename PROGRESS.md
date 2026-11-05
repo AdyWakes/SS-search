@@ -9,7 +9,7 @@ Resume guide for a new session: read this, then `DECISIONS.md`.
 - [x] 4. Embeddings pipeline + model download flow
 - [x] 5. Search + ranking + tests
 - [x] 6. UI: search grid, hotkey bar, settings, indexing progress
-- [ ] 7. Release workflow + README
+- [x] 7. Release workflow + README
 - [ ] Self-review, fixes, UI screenshots, MORNING.md
 
 ## Verified in the sandbox (Linux, Xvfb)
@@ -25,7 +25,7 @@ cargo test -p shotfind-core            # core tests, no models required
 ```
 
 ## Next
-Phase 7 (release workflow + README), then self-review.
+Self-review (performance, crash safety, user-file safety, memory), MORNING.md.
 
 ## Known issues
 - Ranking constants (`search::tuning`) are calibrated on fake embeddings only; tune with real CLIP once pinned.
