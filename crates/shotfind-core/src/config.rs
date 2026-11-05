@@ -20,6 +20,19 @@ pub enum FolderKind {
     Custom,
 }
 
+/// How much of the machine background indexing may use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum IndexingSpeed {
+    /// A quarter of the CPU threads.
+    Gentle,
+    /// Half of the CPU threads.
+    #[default]
+    Balanced,
+    /// All but one CPU thread (still at background priority).
+    Fast,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Folder {
     pub path: PathBuf,
@@ -45,7 +58,8 @@ pub struct Settings {
     pub semantic_enabled: bool,
     /// Indexing paused by the user (persists across restarts).
     pub paused: bool,
-    /// Number of indexing worker threads; 0 = automatic.
+    pub indexing_speed: IndexingSpeed,
+    /// Number of indexing workers; 0 = derived from `indexing_speed`.
     pub workers: usize,
     /// User accepted the one-time model download.
     pub models_consented: bool,
@@ -62,6 +76,7 @@ impl Default for Settings {
             hotkey: "Alt+Shift+S".into(),
             semantic_enabled: true,
             paused: false,
+            indexing_speed: IndexingSpeed::Balanced,
             workers: 0,
             models_consented: false,
         }
@@ -88,13 +103,28 @@ impl Settings {
         self.folders.iter().filter(|f| f.enabled)
     }
 
+    /// Total CPU threads indexing may use.
+    pub fn thread_budget(&self) -> usize {
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
+        match self.indexing_speed {
+            IndexingSpeed::Gentle => cores / 4,
+            IndexingSpeed::Balanced => cores / 2,
+            IndexingSpeed::Fast => cores.saturating_sub(1),
+        }
+        .clamp(1, 16)
+    }
+
+    /// Parallel files in flight. Each worker runs its models with
+    /// [`Settings::threads_per_worker`] threads (2 scales well for these models).
     pub fn effective_workers(&self) -> usize {
         if self.workers > 0 {
             return self.workers;
         }
-        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
-        // Background app: leave most of the machine to the user.
-        (cores / 4).clamp(1, 3)
+        (self.thread_budget() / 2).max(1)
+    }
+
+    pub fn threads_per_worker(&self) -> usize {
+        (self.thread_budget() / self.effective_workers()).max(1)
     }
 
     pub fn is_screenshot_folder(&self, p: &Path) -> bool {
