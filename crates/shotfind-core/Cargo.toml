@@ -29,6 +29,8 @@ hex = "0.4"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 flate2 = "1"
 strsim = "0.11"
+regex = "1"
+lru = "0.16"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
 tracing = "0.1"

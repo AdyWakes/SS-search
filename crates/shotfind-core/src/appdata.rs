@@ -89,6 +89,12 @@ impl AppData {
         Ok(fs::File::create(path)?)
     }
 
+    /// Opens an existing file inside app data for appending (download resume).
+    pub fn open_append(&self, path: &Path) -> Result<fs::File> {
+        let path = self.guard(path)?;
+        Ok(fs::OpenOptions::new().append(true).open(path)?)
+    }
+
     pub fn rename(&self, from: &Path, to: &Path) -> Result<()> {
         let (from, to) = (self.guard(from)?, self.guard(to)?);
         fs::rename(from, to)?;

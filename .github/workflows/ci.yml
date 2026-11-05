@@ -51,3 +51,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Unit + integration tests (no models needed)
         run: cargo test -p shotfind-core
+
+  model-tests:
+    name: End-to-end with real models (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Report unpinned model hashes
+        run: node scripts/pin-models.mjs --check || echo "::warning::Some model downloads have no pinned SHA-256; the app will refuse them until pinned."
+      - name: Verify pinned hashes against upstream
+        run: node scripts/pin-models.mjs --verify
+      - name: Fetch ONNX Runtime (pinned, SHA-256 verified)
+        run: node scripts/fetch-onnxruntime.mjs
+      - name: Download models via the app's own verified downloader
+        run: cargo run --release -p shotfind-core --example fetch_models -- "$RUNNER_TEMP/appdata"
+      - name: Tests that need real models
+        env:
+          SHOTFIND_MODELS_DIR: ${{ runner.temp }}/appdata/models
+          ORT_DYLIB_PATH: ${{ github.workspace }}/src-tauri/resources/onnxruntime/libonnxruntime.so
+        run: cargo test --release -p shotfind-core -- --ignored --nocapture

@@ -1,0 +1,59 @@
+{
+  "_comment": "Every file the app may download. SHA-256 is mandatory: a download with no pinned hash is refused. Fill missing hashes with `node scripts/pin-models.mjs` on a machine with internet access, and review the diff.",
+  "models": [
+    {
+      "id": "ocr",
+      "dir": "ppocr-v4",
+      "title": "Text reading (OCR)",
+      "detail": "PaddleOCR PP-OCRv4 text detection and recognition. Reads English, digits, punctuation and Chinese.",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/PaddlePaddle/PaddleOCR",
+      "required": true,
+      "downloads": [
+        {
+          "url": "https://files.pythonhosted.org/packages/ba/12/1e5497183bdbe782dbb91bad1d0d2297dba4d2831b2652657f7517bfc6df/rapidocr_onnxruntime-1.4.4-py3-none-any.whl",
+          "sha256": "971d7d5f223a7a808662229df1ef69893809d8457d834e6373d3854bc1782cbf",
+          "size": 14915192,
+          "note": "The RapidOCR wheel on PyPI (immutable, hash published by PyPI) contains the official PP-OCRv4 ONNX exports. Only the two model files are kept.",
+          "extract": [
+            {
+              "member": "rapidocr_onnxruntime/models/ch_PP-OCRv4_det_infer.onnx",
+              "file": "det.onnx",
+              "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+              "size": 4745517
+            },
+            {
+              "member": "rapidocr_onnxruntime/models/ch_PP-OCRv4_rec_infer.onnx",
+              "file": "rec.onnx",
+              "sha256": "48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+              "size": 10857958
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clip",
+      "dir": "clip-vit-b32-q8",
+      "title": "Meaning search (CLIP)",
+      "detail": "OpenAI CLIP ViT-B/32, 8-bit quantized ONNX export. Finds images by what they show: \"cat meme\", \"receipt\", \"whiteboard\".",
+      "license": "MIT",
+      "homepage": "https://huggingface.co/Xenova/clip-vit-base-patch32",
+      "required": false,
+      "downloads": [
+        {
+          "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model_quantized.onnx",
+          "file": "vision.onnx",
+          "sha256": "",
+          "size": 89100000
+        },
+        {
+          "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/text_model_quantized.onnx",
+          "file": "text.onnx",
+          "sha256": "73baab855d406190da9faa498cfedf65f15cf309f4cc7385b7b032e6d08e5c3a",
+          "size": 64500000
+        }
+      ]
+    }
+  ]
+}

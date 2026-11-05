@@ -6,7 +6,7 @@ Resume guide for a new session: read this, then `DECISIONS.md`.
 - [x] 1. Scaffold + CI
 - [x] 2. Scanner + watcher + SQLite schema
 - [x] 3. OCR pipeline
-- [ ] 4. Embeddings pipeline + model download flow
+- [x] 4. Embeddings pipeline + model download flow
 - [ ] 5. Search + ranking + tests
 - [ ] 6. UI: search grid, hotkey bar, settings, indexing progress
 - [ ] 7. Release workflow + README
@@ -21,8 +21,9 @@ cargo test -p shotfind-core            # core tests, no models required
 ```
 
 ## Next
-Phase 4 (embeddings + model download).
+Phase 5 (search + ranking).
 
 ## Known issues
+- **CLIP vision model SHA-256 not pinned** (Hugging Face blocked in the build sandbox). Meaning search stays off until `node scripts/pin-models.mjs` is run and the manifest committed.
 - OCR speed (this VM, 1 thread): ~0.35 s detection + ~0.03–0.05 s per text line for a dense 1080p screenshot (~0.9 s total). With 2 workers x 2 threads, about 0.25–0.4 s per screenshot wall time.
 - Reading order interleaves side-by-side columns (search is unaffected; "copy text" output can mix columns).

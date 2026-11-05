@@ -7,8 +7,11 @@
 pub mod appdata;
 pub mod config;
 pub mod db;
+pub mod embed;
+pub mod engines;
 pub mod imgutil;
 pub mod indexer;
+pub mod models;
 pub mod ocr;
 pub mod pipeline;
 pub mod runtime;

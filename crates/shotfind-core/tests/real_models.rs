@@ -85,3 +85,67 @@ fn ocr_handles_tall_scrolling_capture() {
         assert!(text.contains(&format!("Line number {i} ")), "missing line {i}:\n{text}");
     }
 }
+
+fn bar_chart() -> RgbImage {
+    let mut img = RgbImage::from_pixel(800, 600, Rgb([255, 255, 255]));
+    let colors = [Rgb([66, 133, 244]), Rgb([219, 68, 55]), Rgb([244, 180, 0]), Rgb([15, 157, 88])];
+    for (i, h) in [300u32, 450, 200, 380].iter().enumerate() {
+        let x0 = 100 + i as u32 * 160;
+        for y in (550 - h)..550 {
+            for x in x0..x0 + 100 {
+                img.put_pixel(x, y, colors[i]);
+            }
+        }
+    }
+    for x in 80..760 {
+        img.put_pixel(x, 551, Rgb([0, 0, 0]));
+    }
+    img
+}
+
+fn sunset() -> RgbImage {
+    RgbImage::from_fn(800, 600, |_, y| {
+        let t = y as f32 / 600.0;
+        if t > 0.7 {
+            Rgb([20, 30, 60])
+        } else {
+            Rgb([(255.0 - 60.0 * t) as u8, (120.0 + 60.0 * t) as u8, (60.0 + 120.0 * t) as u8])
+        }
+    })
+}
+
+#[test]
+#[ignore]
+fn clip_ranks_matching_concepts() {
+    use shotfind_core::models::{is_installed, ModelId};
+    use shotfind_core::pipeline::{ImageEmbedder, TextEmbedder};
+    let dir = models_dir();
+    if !is_installed(&dir, ModelId::Clip) {
+        eprintln!("CLIP not installed (hash not pinned yet?) - skipping");
+        return;
+    }
+    runtime::init(&[]).unwrap();
+    let d = dir.join("clip-vit-b32-q8");
+    let mut vis = shotfind_core::embed::ClipImage::load(&d.join("vision.onnx"), 2).unwrap();
+    let mut txt = shotfind_core::embed::ClipText::load(&d.join("text.onnx"), 1).unwrap();
+    let doc = render(
+        800,
+        1000,
+        &["Invoice #2024-117", "Item        Qty   Price", "Widget       2    19.99", "Total             39.98"],
+        26.0,
+        false,
+    );
+    let imgs = [("chart", bar_chart()), ("sunset", sunset()), ("document", doc)];
+    let vecs: Vec<(&str, Vec<f32>)> = imgs.iter().map(|(n, i)| (*n, vis.embed_image(i).unwrap())).collect();
+    for (query, want) in
+        [("a bar chart", "chart"), ("a sunset over the sea", "sunset"), ("a printed invoice document", "document")]
+    {
+        let q = txt.embed_text(query).unwrap();
+        let best = vecs
+            .iter()
+            .map(|(n, v)| (*n, v.iter().zip(&q).map(|(a, b)| a * b).sum::<f32>()))
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .unwrap();
+        assert_eq!(best.0, want, "query {query:?}");
+    }
+}
